@@ -2444,10 +2444,8 @@ ARG STACK_SIZE
 RUN cat > /root/jit_stubs.c << 'EOF'
 #include <stddef.h>
 #include <stdint.h>
-
 int zend_jit_startup_ok = 0;
 void* jit_globals = NULL;
-
 void zend_jit_activate(void) {}
 void zend_jit_blacklist_function(void* op_array) {}
 int  zend_jit_check_support(void) { return 0; }
@@ -2464,6 +2462,7 @@ void zend_jit_startup(void* buf, size_t size, int reattached) {}
 void zend_jit_status(void* zv) {}
 void zend_jit_unprotect(void) {}
 EOF
+
 
 RUN set -euxo pipefail; \
 	mkdir -p /build/output; \
