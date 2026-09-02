@@ -22,6 +22,16 @@ RUN PHP_REF="${PHP_REF:-php-$PHP_VERSION}" && \
 		--single-branch \
 		--depth 1;
 
+# Empty WASM incompatible JIT IR sources
+RUN find /root/php-src/ext/opcache/jit -name "*.c" \
+        ! -path "*/dynasm/minilua.c" \
+        ! -path "*/gen_ir_fold_hash.c" \
+        ! -path "*/ir_strtab.c" \
+        -exec sh -c 'echo "" > "$1"' _ {} \; && \
+    find /root/php-src/ext/opcache/jit -name "*.dasc" \
+        ! -name "ir_x86.dasc" \
+        -exec sh -c 'echo "" > "$1"' _ {} \;
+
 # Work around memory leak due to PHP using Emscripten's incomplete mmap/munmap support
 COPY ./compile/php-wasm-memory-storage /root/php-src/ext/wasm_memory_storage
 
@@ -499,6 +509,16 @@ RUN echo '' > /root/php-src/ext/standard/proc_open.c;
 
 ARG OUTPUT_DIR_ON_HOST
 ARG DEBUG_DWARF_COMPILATION_DIR
+
+# Compile minilua and gen_ir_fold_hash with native gcc
+RUN cd /root/php-src && \
+    gcc -o ext/opcache/jit/ir/minilua \
+        ext/opcache/jit/ir/dynasm/minilua.c -lm && \
+    gcc -o ext/opcache/jit/ir/gen_ir_fold_hash \
+        ext/opcache/jit/ir/gen_ir_fold_hash.c -lm && \
+    touch ext/opcache/jit/ir/ir_emit_x86.h && \
+    touch ext/opcache/jit/ir/ir_fold_hash.h
+
 RUN source /root/emsdk/emsdk_env.sh && \
 	# We're compiling PHP as emscripten's side module...
 	export JSPI_FLAGS=$(if [ "$WITH_JSPI" = "yes" ]; then echo "-sSUPPORT_LONGJMP=wasm -fwasm-exceptions"; else echo ""; fi) && \
@@ -508,7 +528,7 @@ RUN source /root/emsdk/emsdk_env.sh && \
 		-fdebug-compilation-dir=${DEBUG_DWARF_COMPILATION_DIR}/ \
 		-fdebug-prefix-map=/root/php-src/=${OUTPUT_DIR_ON_HOST}/${PHP_VERSION_ESCAPED}/php-src/ " \
 	# ...which means we must skip all the libraries - they will be provided in the final linking step.
-	emmake make -j14
+	emmake make -j14 libphp.la || emmake make -j14
 
 RUN cp -v /root/php-src/.libs/libphp*.la /root/lib/libphp.la
 RUN cp -v /root/php-src/.libs/libphp*.a /root/lib/libphp.a
@@ -2419,6 +2439,32 @@ COPY ./compile/php/phpwasm-emscripten-library-known-undefined-functions.js /root
 ARG WITH_SOURCEMAPS
 ARG WITH_DEBUG
 ARG STACK_SIZE
+
+# Create empty jit_stubs.c
+RUN cat > /root/jit_stubs.c << 'EOF'
+#include <stddef.h>
+#include <stdint.h>
+
+int zend_jit_startup_ok = 0;
+void* jit_globals = NULL;
+
+void zend_jit_activate(void) {}
+void zend_jit_blacklist_function(void* op_array) {}
+int  zend_jit_check_support(void) { return 0; }
+int  zend_jit_config(void* jit_config, int stage) { return 0; }
+void zend_jit_deactivate(void) {}
+int  zend_jit_debug_config(long long old_val, long long new_val, int stage) { return 0; }
+void zend_jit_init(void) {}
+int  zend_jit_op_array(void* op_array, void* script) { return 0; }
+void zend_jit_protect(void) {}
+void zend_jit_restart(void) {}
+int  zend_jit_script(void* script) { return 0; }
+void zend_jit_shutdown(void) {}
+void zend_jit_startup(void* buf, size_t size, int reattached) {}
+void zend_jit_status(void* zv) {}
+void zend_jit_unprotect(void) {}
+EOF
+
 RUN set -euxo pipefail; \
 	mkdir -p /build/output; \
 	source /root/emsdk/emsdk_env.sh; \
@@ -2487,6 +2533,7 @@ RUN set -euxo pipefail; \
 		/root/lib/libphp.a \
 		/root/proc_open.c \
 		/root/php_wasm.c \
+		/root/jit_stubs.c \
 		$ZEND_SIDE_MODULE_EXPORT_SOURCE \
 		$(cat /root/.emcc-php-wasm-sources) \
 	-s ENVIRONMENT=$ENVIRONMENT \
