@@ -2197,7 +2197,6 @@ RUN export ASYNCIFY_IMPORTS=$'[\n\
 	else \
 		export ASYNCIFY_ONLY="$ASYNCIFY_ONLY_UNPREFIXED"; \
 	fi; \
-
 	echo -n ' -s ASYNCIFY_ONLY=['$ASYNCIFY_ONLY'] '| tr -d "\n" >> /root/.emcc-php-asyncify-flags;
 
 
