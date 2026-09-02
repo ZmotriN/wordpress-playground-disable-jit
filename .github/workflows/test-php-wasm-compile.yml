@@ -1,0 +1,36 @@
+# .github/workflows/test-php-wasm-compile.yml
+name: Test PHP.wasm compile
+
+on:
+  push:
+    paths:
+      - 'packages/php-wasm/compile/php/Dockerfile'
+      - 'packages/php-wasm/compile/**'
+  pull_request:
+    paths:
+      - 'packages/php-wasm/compile/php/Dockerfile'
+      - 'packages/php-wasm/compile/**'
+  workflow_dispatch:
+
+jobs:
+  recompile-php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # nécessaire pour JSPI, cf. note ci-dessous
+
+      - run: npm ci
+
+      - name: Recompile PHP.wasm (web target)
+        run: npx nx recompile-php:jspi php-wasm-web -- --PHP_VERSION=8.5
+
+      - name: Upload compiled artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: php-wasm-build
+          path: dist/**/*.wasm
